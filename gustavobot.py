@@ -66,10 +66,8 @@ def wake_up(message: Message) -> None:
                 ' на него ответ!'
             )
         )
-    except Exception as e:
-        logger.error(
-            f'Ошибка при отправке сообщения: {e}. '
-        )
+    except (ApiTelegramException, RequestException) as e:
+        logger.error(f'Возникла ошибка при отправке сообщения: {e}.')
 
 
 @bot.message_handler(commands=['help'])
@@ -89,16 +87,19 @@ def get_help(message: Message) -> None:
                 f' Удачи тебе, {name}!'
             )
         )
-    except Exception as e:
-        logger.error(
-            f'Ошибка при отправке сообщения: {e}. '
-        )
+    except (ApiTelegramException, RequestException) as e:
+        logger.error(f'Возникла ошибка при отправке сообщения: {e}.')
 
 
 @bot.message_handler(content_types=['text'])
 def send_ai_message(message: Message) -> None:
+    """
+    Высылает пользователю ответ на запрос, удостоверившись,
+    что все проверки прошли успешно.
+    """
     chat_id = message.chat.id
     text = message.text
+    # Присылаем сообщение о начале обработки запроса.
     processing_msg = send_processing_message(chat_id)
     try:
         logger.debug(f'Запрос: {text}.')
@@ -110,6 +111,8 @@ def send_ai_message(message: Message) -> None:
         return
     try:
         ai_text_answer = check_response(response)
+        # Проверяем на лимит по кол-ву символовов,
+        # высылаем сообщение от Deepseek.
         send_long_message(ai_text_answer, chat_id)
         if processing_msg:
             bot.delete_message(chat_id, processing_msg.message_id)
@@ -133,6 +136,25 @@ def send_ai_message(message: Message) -> None:
         logger.error(error_message)
         bot.send_message(chat_id=chat_id, text=error_message)
         return
+
+
+def check_tokens() -> bool:
+    """Проверяет наличие всех переменных окружения."""
+    tokens: dict[str, Optional[str]] = {
+        'DEEPSEEK_TOKEN': DEEPSEEK_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN
+    }
+    missing_tokens: list[str] = [
+        name for name, token in tokens.items() if not token
+    ]
+    if missing_tokens:
+        error_message = (
+            'Отсутствуют обязательные переменные окружения: '
+            f'{", ".join(missing_tokens)}'
+        )
+        logger.critical(error_message)
+        raise EnvironmentError(error_message)
+    return True
 
 
 def send_processing_message(chat_id: int) -> Optional[Message]:
@@ -159,25 +181,6 @@ def send_long_message(ai_text_answer: str, chat_id: int) -> None:
             )
     else:
         bot.send_message(chat_id=chat_id, text=ai_text_answer)
-
-
-def check_tokens() -> bool:
-    """Проверяет наличие всех переменных окружения."""
-    tokens: dict[str, Optional[str]] = {
-        'DEEPSEEK_TOKEN': DEEPSEEK_TOKEN,
-        'TELEGRAM_TOKEN': TELEGRAM_TOKEN
-    }
-    missing_tokens: list[str] = [
-        name for name, token in tokens.items() if not token
-    ]
-    if missing_tokens:
-        error_message = (
-            'Отсутствуют обязательные переменные окружения: '
-            f'{", ".join(missing_tokens)}'
-        )
-        logger.critical(error_message)
-        raise EnvironmentError(error_message)
-    return True
 
 
 def get_ai_answer(text: str) -> ChatCompletion:
