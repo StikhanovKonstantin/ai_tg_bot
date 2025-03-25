@@ -21,6 +21,7 @@ from exceptions.content_attr_error import (
     AttrContentError, AttrContentEmptyError
 )
 from exceptions.api_status_code_error import ApiStatusCodeError
+from constants import MESSAGE_LENGTH_LIMIT
 
 
 load_dotenv()
@@ -31,6 +32,12 @@ logger = logging.getLogger(__name__)
 DEEPSEEK_TOKEN: Optional[str] = os.getenv('DEEPSEEK_TOKEN')
 DEEPSEEK_URL: Optional[str] = os.getenv('DEEPSEEK_URL')
 TELEGRAM_TOKEN: Optional[str] = os.getenv('TELEGRAM_TOKEN')
+SEND_MESSAGE_ERROR: str = 'Возникла ошибка при отправке сообщения: {error}.'
+WELCOME_MESSAGE: str = (
+    'Привет, {name}, я ИИ-ассистент! '
+    'Чтобы начать, напиши свой запрос, а я с радостью найду '
+    'на него ответ!'
+)
 
 # response - объект класса ChatCompletion, дальше вложенность
 # аттрибутов схожа с матрешкой.
@@ -49,46 +56,21 @@ client = OpenAI(
 )
 
 
-@bot.message_handler(commands=['start'])
-def wake_up(message: Message) -> None:
+@bot.message_handler(commands=['start', 'help'])
+def get_info(message: Message) -> None:
     """
-    При вводе команды /start бот начинает работу,
-    а также присылает информационное сообщение пользователю.
-    """
-    chat = message.chat
-    name = chat.first_name
-    try:
-        bot.send_message(
-            chat_id=chat.id,
-            text=(
-                f'Привет, {name}, я ИИ-ассистент! '
-                'Чтобы начать, напиши свой запрос, а я с радостью найду'
-                ' на него ответ!'
-            )
-        )
-    except (ApiTelegramException, RequestException) as e:
-        logger.error(f'Возникла ошибка при отправке сообщения: {e}.')
-
-
-@bot.message_handler(commands=['help'])
-def get_help(message: Message) -> None:
-    """
-    При вводе команды /help бот отправит помощь пользователю
-    в виде инструкции к работе.
+    При вводе команд [ /start, /help ] присылает пользователю
+    информационное сообщение по использованию бота.
     """
     chat = message.chat
     name = chat.first_name
     try:
         bot.send_message(
             chat_id=chat.id,
-            text=(
-                'Запутался? Ничего! Чтобы начать, введи любой запрос в чат, '
-                'я любезно отвечу на любой твой вопрос, найду лучшее решение!'
-                f' Удачи тебе, {name}!'
-            )
+            text=(WELCOME_MESSAGE.format(name=name))
         )
     except (ApiTelegramException, RequestException) as e:
-        logger.error(f'Возникла ошибка при отправке сообщения: {e}.')
+        logger.error(SEND_MESSAGE_ERROR.format(error=e))
 
 
 @bot.message_handler(content_types=['text'])
@@ -105,7 +87,7 @@ def send_ai_message(message: Message) -> None:
         logger.debug(f'Запрос: {text}.')
         response = get_ai_answer(text)
     except (ConnectionError, ApiStatusCodeError) as e:
-        error_message = f'Сбой в работе программы: {e}. Запрос: {text}.'
+        error_message: str = f'Сбой в работе программы: {e}. Запрос: {text}.'
         logger.error(error_message)
         bot.send_message(chat_id=chat_id, text=error_message)
         return
@@ -123,14 +105,14 @@ def send_ai_message(message: Message) -> None:
         TypeError, AttrChoicesError, AttrChoicesEmptyError,
         AttrMessageError, AttrContentError, AttrContentEmptyError
     ) as e:
-        error_message = (
+        error_message: str = (
             f'Ошибка в структуре ответа API-Deepseek: {e}. Запрос: {text}'
         )
         logger.error(error_message)
         bot.send_message(chat_id=chat_id, text=error_message)
         return
     except Exception as e:
-        error_message = (
+        error_message: str = (
             f'Внезапная ошибка в работе программы: {e}. Запрос: {text}'
         )
         logger.error(error_message)
@@ -148,7 +130,7 @@ def check_tokens() -> bool:
         name for name, token in tokens.items() if not token
     ]
     if missing_tokens:
-        error_message = (
+        error_message: str = (
             'Отсутствуют обязательные переменные окружения: '
             f'{", ".join(missing_tokens)}'
         )
@@ -166,7 +148,7 @@ def send_processing_message(chat_id: int) -> Optional[Message]:
                 'Пожалуйста, немного подождите, и вы получите свой ответ...'
             )
     except (ApiTelegramException, RequestException) as e:
-        logger.error(f'Возникла ошибка при отправке сообщения: {e}.')
+        logger.error(SEND_MESSAGE_ERROR + str(e))
 
 
 def send_long_message(ai_text_answer: str, chat_id: int) -> None:
@@ -174,10 +156,12 @@ def send_long_message(ai_text_answer: str, chat_id: int) -> None:
     Обрабатывает случай, когда сообщение от Deepseek больше чем 4096.
     Присылает сообщение в чат пользователю.
     """
-    if len(ai_text_answer) > 4096:
-        for i in range(0, len(ai_text_answer), 4096):
+    if len(ai_text_answer) > MESSAGE_LENGTH_LIMIT:
+        for i in range(0, len(ai_text_answer), MESSAGE_LENGTH_LIMIT):
             bot.send_message(
-                chat_id=chat_id, text=ai_text_answer[i:i + 4096]
+                chat_id=chat_id, text=ai_text_answer[
+                    i:i + MESSAGE_LENGTH_LIMIT
+                ]
             )
     else:
         bot.send_message(chat_id=chat_id, text=ai_text_answer)
@@ -189,7 +173,7 @@ def get_ai_answer(text: str) -> ChatCompletion:
     Проверяет на корректное подключение к сервису.
     """
     try:
-        response = client.chat.completions.create(
+        response: ChatCompletion = client.chat.completions.create(
             model='deepseek-chat',
             messages=[
                 {'role': 'system', 'content': 'You are a helpful assistant'},
