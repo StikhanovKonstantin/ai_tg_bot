@@ -29,3 +29,11 @@ def update_deepseek_history(
     """Обновляет историю ответов от нейросети Deepseek."""
     if chat_id in dialogues:
         dialogues[chat_id].append({'role': 'system', 'content': response})
+
+
+def delete_history(
+        chat_id: int, dialogues: dict[str, list[dict[str, str]]]
+) -> None:
+    """Удаляет историю диалога пользователя по chat_id с ботом."""
+    if chat_id in dialogues:
+        dialogues[chat_id].clear()

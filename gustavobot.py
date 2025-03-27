@@ -20,13 +20,17 @@ from exceptions.message_attr_error import AttrMessageError
 from exceptions.content_attr_error import (
     AttrContentError, AttrContentEmptyError
 )
+from exceptions.clear_dialogue_error import ClearContextError
 from exceptions.api_status_code_error import ApiStatusCodeError
+from constants.numeric_constants import MESSAGE_LENGTH_LIMIT
+from constants.message_constants import (
+    WELCOME_MESSAGE, SEND_MESSAGE_ERROR, CLEAR_CONTEXT_MESSAGE,
+    CLEAR_CONTEXT_ERROR_MESSAGE
+)
+from constants.requirement_attributes import REQUIREMENT_ATTRS
 from storing_query_history import (
     update_user_history, update_deepseek_history, full_context
 )
-from constants.numeric_constants import MESSAGE_LENGTH_LIMIT
-from constants.message_constants import WELCOME_MESSAGE, SEND_MESSAGE_ERROR
-from constants.requirement_attributes import REQUIREMENT_ATTRS
 
 
 load_dotenv()
@@ -48,7 +52,7 @@ client = OpenAI(
 
 # Словарь, хранящий в себе историю запросов пользователя,
 # а также ответы Deepseek.
-dialogues: dict = {}
+dialogues: dict[str, list[dict[str, str]]] = {}
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -66,6 +70,28 @@ def get_info(message: Message) -> None:
         )
     except (ApiTelegramException, RequestException) as e:
         logger.error(SEND_MESSAGE_ERROR.format(error=e))
+
+
+@bot.message_handler(commands=['clear'])
+def delete_context(message: Message) -> None:
+    chat_id = message.chat.id
+    first_name = message.from_user.first_name
+    try:
+        dialogues[chat_id].clear()
+        logger.debug(
+            CLEAR_CONTEXT_MESSAGE.format(name=first_name)
+        )
+        bot.send_message(
+            text=CLEAR_CONTEXT_MESSAGE.format(
+                name=first_name,
+            ),
+            chat_id=chat_id
+        )
+    except KeyError:
+        logger.error(CLEAR_CONTEXT_ERROR_MESSAGE.format(name=first_name))
+        raise ClearContextError(CLEAR_CONTEXT_ERROR_MESSAGE(name=first_name))
+    except (ApiTelegramException, RequestException) as e:
+        logger.error(SEND_MESSAGE_ERROR + str(e))
 
 
 @bot.message_handler(content_types=['text'])

@@ -1,6 +1,6 @@
 class AttrChoicesError(Exception):
     """
-    Исключение - аттрибут `choices` класса `list` либо отсутствует,
+    Исключение: аттрибут `choices` класса `list` либо отсутствует,
     либо имеет другой тип данных.
     """
 
@@ -12,7 +12,7 @@ class AttrChoicesError(Exception):
 
 
 class AttrChoicesEmptyError(Exception):
-    """Исключение - аттрибут `choices` класса `list` пустой."""
+    """Исключение: аттрибут `choices` класса `list` пустой."""
 
     def __str__(self):
         return 'Ошибка: аттрибут choices пуст.'
