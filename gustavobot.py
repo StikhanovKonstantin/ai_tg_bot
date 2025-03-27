@@ -21,7 +21,12 @@ from exceptions.content_attr_error import (
     AttrContentError, AttrContentEmptyError
 )
 from exceptions.api_status_code_error import ApiStatusCodeError
-from constants import MESSAGE_LENGTH_LIMIT
+from storing_query_history import (
+    update_user_history, update_deepseek_history, full_context
+)
+from constants.numeric_constants import MESSAGE_LENGTH_LIMIT
+from constants.message_constants import WELCOME_MESSAGE, SEND_MESSAGE_ERROR
+from constants.requirement_attributes import REQUIREMENT_ATTRS
 
 
 load_dotenv()
@@ -32,20 +37,6 @@ logger = logging.getLogger(__name__)
 DEEPSEEK_TOKEN: Optional[str] = os.getenv('DEEPSEEK_TOKEN')
 DEEPSEEK_URL: Optional[str] = os.getenv('DEEPSEEK_URL')
 TELEGRAM_TOKEN: Optional[str] = os.getenv('TELEGRAM_TOKEN')
-SEND_MESSAGE_ERROR: str = 'Возникла ошибка при отправке сообщения: {error}.'
-WELCOME_MESSAGE: str = (
-    'Привет, {name}, я ИИ-ассистент! '
-    'Чтобы начать, напиши свой запрос, а я с радостью найду '
-    'на него ответ!'
-)
-
-# response - объект класса ChatCompletion, дальше вложенность
-# аттрибутов схожа с матрешкой.
-REQUIREMENT_ATTRS: dict[str, str] = {
-    'response': 'choices',
-    'choices': 'message',
-    'message': 'content'
-}
 
 bot = TeleBot(token=TELEGRAM_TOKEN)
 
@@ -54,6 +45,10 @@ client = OpenAI(
     api_key=DEEPSEEK_TOKEN,
     base_url=DEEPSEEK_URL
 )
+
+# Словарь, хранящий в себе историю запросов пользователя,
+# а также ответы Deepseek.
+dialogues: dict = {}
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -81,11 +76,15 @@ def send_ai_message(message: Message) -> None:
     """
     chat_id = message.chat.id
     text = message.text
-    # Присылаем сообщение о начале обработки запроса.
+    # Обновляем историю запросов от пользователя.
+    update_user_history(chat_id, dialogues, text)
+
+    # Присылаем сообщение о начале обработки запроса,
+    # сохраняем в переменную для доступа к message_id.
     processing_msg = send_processing_message(chat_id)
     try:
         logger.debug(f'Запрос: {text}.')
-        response = get_ai_answer(text)
+        response = get_ai_answer(chat_id)
     except (ConnectionError, ApiStatusCodeError) as e:
         error_message: str = f'Сбой в работе программы: {e}. Запрос: {text}.'
         logger.error(error_message)
@@ -93,6 +92,8 @@ def send_ai_message(message: Message) -> None:
         return
     try:
         ai_text_answer = check_response(response)
+        # Обновляем историю ответа от Deepseek.
+        update_deepseek_history(chat_id, dialogues, ai_text_answer)
         # Проверяем на лимит по кол-ву символовов,
         # высылаем сообщение от Deepseek.
         send_long_message(ai_text_answer, chat_id)
@@ -134,7 +135,6 @@ def check_tokens() -> bool:
             'Отсутствуют обязательные переменные окружения: '
             f'{", ".join(missing_tokens)}'
         )
-        logger.critical(error_message)
         raise EnvironmentError(error_message)
     return True
 
@@ -167,17 +167,19 @@ def send_long_message(ai_text_answer: str, chat_id: int) -> None:
         bot.send_message(chat_id=chat_id, text=ai_text_answer)
 
 
-def get_ai_answer(text: str) -> ChatCompletion:
+def get_ai_answer(chat_id: int) -> ChatCompletion:
     """
     Получает ответ от API-Deepseek.
     Проверяет на корректное подключение к сервису.
     """
     try:
+        # Получаем полный контекст диалога с пользователем.
+        messages = full_context(chat_id, dialogues)
         response: ChatCompletion = client.chat.completions.create(
             model='deepseek-chat',
             messages=[
                 {'role': 'system', 'content': 'You are a helpful assistant'},
-                {'role': 'user', 'content': text},
+                *messages
             ],
             stream=False
         )
@@ -238,7 +240,7 @@ def check_response(response: ChatCompletion) -> str:
 
 def main() -> None:
     if not check_tokens():
-        exit
+        exit()
     bot.polling()
 
 
