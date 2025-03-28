@@ -37,7 +37,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Константы - токены, url - адрес Deepseek, обязательные атрибуты.
+# Константы - токены, url - адрес Deepseek.
 DEEPSEEK_TOKEN: Optional[str] = os.getenv('DEEPSEEK_TOKEN')
 DEEPSEEK_URL: Optional[str] = os.getenv('DEEPSEEK_URL')
 TELEGRAM_TOKEN: Optional[str] = os.getenv('TELEGRAM_TOKEN')
@@ -248,7 +248,7 @@ def check_response(response: ChatCompletion) -> str:
         raise AttrChoicesError
     if not response.choices:
         raise AttrChoicesEmptyError
-    # Переходим к 1 выбору из ответа нейросети.
+    # Переходим к 1 выбору из ответа Deepseek.
     first_choice = response.choices[0]
     if (
         not hasattr(first_choice, REQUIREMENT_ATTRS['choices'])
