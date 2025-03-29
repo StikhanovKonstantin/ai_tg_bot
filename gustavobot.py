@@ -2,7 +2,6 @@ import os
 import sys
 from typing import Optional
 import logging
-from http import HTTPStatus
 from requests.exceptions import RequestException
 
 import openai
@@ -31,6 +30,7 @@ from constants.requirement_attributes import REQUIREMENT_ATTRS
 from storing_query_history import (
     update_user_history, update_deepseek_history, full_context
 )
+from logging_bot.decorators.log_func_decorator import log_func_errors
 
 
 load_dotenv()
@@ -88,12 +88,17 @@ def delete_context(message: Message) -> None:
             chat_id=chat_id
         )
     except KeyError:
+        error_message: str = CLEAR_CONTEXT_ERROR_MESSAGE.format(
+            name=first_name
+        )
         logger.error(CLEAR_CONTEXT_ERROR_MESSAGE.format(name=first_name))
-        raise ClearContextError(CLEAR_CONTEXT_ERROR_MESSAGE(name=first_name))
+        bot.send_message(chat_id=chat_id, text=error_message)
+        raise ClearContextError(error_message)
     except (ApiTelegramException, RequestException) as e:
         logger.error(SEND_MESSAGE_ERROR + str(e))
 
 
+@log_func_errors(logger)
 @bot.message_handler(content_types=['text'])
 def send_ai_message(message: Message) -> None:
     """
@@ -112,9 +117,10 @@ def send_ai_message(message: Message) -> None:
         logger.debug(f'Запрос: {text}.')
         response = get_ai_answer(chat_id)
     except (ConnectionError, ApiStatusCodeError) as e:
-        error_message: str = f'Сбой в работе программы: {e}. Запрос: {text}.'
-        logger.error(error_message)
-        bot.send_message(chat_id=chat_id, text=error_message)
+        bot.send_message(
+            chat_id=chat_id,
+            text=f'Сбой в работе программы: {e}. Запрос: {text}.'
+        )
         return
     try:
         ai_text_answer = check_response(response)
@@ -132,21 +138,22 @@ def send_ai_message(message: Message) -> None:
         TypeError, AttrChoicesError, AttrChoicesEmptyError,
         AttrMessageError, AttrContentError, AttrContentEmptyError
     ) as e:
-        error_message: str = (
-            f'Ошибка в структуре ответа API-Deepseek: {e}. Запрос: {text}'
+        bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f'Ошибка в структуре ответа API-Deepseek: {e}. Запрос: {text}.'
+            )
         )
-        logger.error(error_message)
-        bot.send_message(chat_id=chat_id, text=error_message)
         return
     except Exception as e:
-        error_message: str = (
-            f'Внезапная ошибка в работе программы: {e}. Запрос: {text}'
+        bot.send_message(
+            chat_id=chat_id,
+            text=f'Внезапная ошибка в работе программы: {e}. Запрос: {text}.'
         )
-        logger.error(error_message)
-        bot.send_message(chat_id=chat_id, text=error_message)
         return
 
 
+@log_func_errors(logger)
 def check_tokens() -> bool:
     """Проверяет наличие всех переменных окружения."""
     tokens: dict[str, Optional[str]] = {
@@ -165,6 +172,7 @@ def check_tokens() -> bool:
     return True
 
 
+@log_func_errors(logger)
 def send_processing_message(chat_id: int) -> Optional[Message]:
     """Подготавливает сообщение пользователю об обработке запроса."""
     try:
@@ -177,6 +185,7 @@ def send_processing_message(chat_id: int) -> Optional[Message]:
         logger.error(SEND_MESSAGE_ERROR + str(e))
 
 
+@log_func_errors(logger)
 def send_long_message(ai_text_answer: str, chat_id: int) -> None:
     """
     Обрабатывает случай, когда сообщение от Deepseek больше чем 4096.
@@ -193,6 +202,7 @@ def send_long_message(ai_text_answer: str, chat_id: int) -> None:
         bot.send_message(chat_id=chat_id, text=ai_text_answer)
 
 
+@log_func_errors(logger)
 def get_ai_answer(chat_id: int) -> ChatCompletion:
     """
     Получает ответ от API-Deepseek.
@@ -210,23 +220,16 @@ def get_ai_answer(chat_id: int) -> ChatCompletion:
             stream=False
         )
     except openai.APIConnectionError as e:
-        logger.error(
-            'Ошибка подключения к API-сервису. '
-            f'Причина: {e.__cause__}.'
-        )
         raise ConnectionError(
             'Ошибка подключения к API-сервису Deepseek. '
             f'Получена ошибка: {e}.'
         ) from e
     except openai.APIStatusError as e:
-        logger.error(
-            f'Статус-код ответа отличен от {HTTPStatus.OK}. '
-            f'Статус код: {e.status_code}.'
-        )
-        raise ApiStatusCodeError from e
+        raise ApiStatusCodeError(e.status_code) from e
     return response
 
 
+@log_func_errors(logger)
 def check_response(response: ChatCompletion) -> str:
     """
     Проверяет все необходимые аттрибуты для работы с ботом.
@@ -239,7 +242,7 @@ def check_response(response: ChatCompletion) -> str:
     if not isinstance(response, ChatCompletion):
         raise TypeError(
             'response - должен быть типом `ChatCompletion`. '
-            f'Сейчас response - это класс {type(response)}.'
+            f'Сейчас response является классом: {type(response)}.'
         )
     if (
         not hasattr(response, REQUIREMENT_ATTRS['response']) or not
@@ -278,7 +281,4 @@ if __name__ == '__main__':
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     handler.setFormatter(formatter)
-    try:
-        main()
-    except Exception as e:
-        logger.error(f'Критическая ошибка при запуске бота: {e}.')
+    main()

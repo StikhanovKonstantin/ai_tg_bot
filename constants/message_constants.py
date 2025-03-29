@@ -21,5 +21,5 @@ CLEAR_CONTEXT_MESSAGE: str = (
 # Сообщение об ошибке при очистке диалога с Deepseek.
 
 CLEAR_CONTEXT_ERROR_MESSAGE: str = (
-    'Ошибка: `chat_id` пользователя {name} нет в в истории диалога.'
+    'Ошибка: `chat_id` пользователя {name} нет в истории диалога.'
 )
