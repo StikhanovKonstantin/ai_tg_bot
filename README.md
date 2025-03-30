@@ -76,6 +76,9 @@ DeepSeek — это интеллектуальный Телеграм бот, к
 ![image](https://github.com/user-attachments/assets/60a5804b-661e-4675-bf25-2687930414bb)
 
 -- Отправка запроса
+![image](https://github.com/user-attachments/assets/f4ea1fc1-3061-4b3a-90e2-791573f6c992)
+![image](https://github.com/user-attachments/assets/9f79f594-5238-4d60-be40-a692b6099695)
+
 
 
 Пользуйтесь с удовольствием!
